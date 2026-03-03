@@ -14,10 +14,14 @@ export const PaneResize = <T,>(props: {
     const [containerSize, setContainerSize] = createSignal<number>(0);
     const [resizeState, setResizeState] = createSignal<{ origSize: number; orig: number } | null>(null);
 
-    const resizeUp = () => setResizeState(null);
+    const resizeUp = () => {
+        setResizeState(null);
+    }
 
     const resizeDown = (e: MouseEvent | TouchEvent) => {
+        // inhibit the click to scroll event too
         e.preventDefault();
+        e.stopImmediatePropagation();
         const client = e instanceof MouseEvent
             ? (props.direction === "vertical" ? e.clientY : e.clientX)
             : (props.direction === "vertical" ? e.touches[0].clientY : e.touches[0].clientX);
@@ -26,6 +30,7 @@ export const PaneResize = <T,>(props: {
 
     const resizeMove = (e: MouseEvent | TouchEvent) => {
         if (!resizeState()) return;
+        e.preventDefault();
         const client = e instanceof MouseEvent
             ? (props.direction === "vertical" ? e.clientY : e.clientX)
             : (props.direction === "vertical" ? e.touches[0].clientY : e.touches[0].clientX);
@@ -50,10 +55,11 @@ export const PaneResize = <T,>(props: {
         const ro = new ResizeObserver(updateSize);
         ro.observe(container);
 
-        document.addEventListener("mousemove", resizeMove);
-        document.addEventListener("touchmove", resizeMove);
-        document.addEventListener("mouseup", resizeUp);
-        document.addEventListener("touchend", resizeUp);
+        const options = { passive: false };
+        document.addEventListener("mousemove", resizeMove, options);
+        document.addEventListener("touchmove", resizeMove, options);
+        document.addEventListener("mouseup", resizeUp, options);
+        document.addEventListener("touchend", resizeUp, options);
 
         onCleanup(() => {
             ro.disconnect();
@@ -102,8 +108,8 @@ export const PaneResize = <T,>(props: {
                     props.second === null
                         ? "hidden"
                         : props.direction === "vertical"
-                            ? "relative w-full h-[4px] cursor-ns-resize"
-                            : "relative h-full w-[4px] cursor-ew-resize"
+                            ? "relative w-full h-[4px] cursor-ns-resize touch-none"
+                            : "relative h-full w-[4px] cursor-ew-resize touch-none"
                 }
             >
                 <div class={
