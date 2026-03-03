@@ -704,7 +704,6 @@ void test_sstatus_write_mask(void) {
     g_pc = g_kernel_text->base;
     step();
     step();
-    printf("After: %d\n", g_csr[CSR_MSTATUS]);
     TEST_ASSERT(g_csr[CSR_MSTATUS] != -1u);
 }
 
