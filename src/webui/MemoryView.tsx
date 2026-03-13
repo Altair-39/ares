@@ -2,7 +2,6 @@ import { createVirtualizer } from "@tanstack/solid-virtual";
 import { Component, createSignal, onMount, createEffect, For, Show } from "solid-js";
 import { TabSelector } from "./TabSelector";
 import { DATA_BASE, shadowStackAugmented, ShadowStackAugmentedEnt, STACK_TOP, TEXT_BASE, wasmRuntime } from "./EmulatorState";
-import { Portal } from "solid-js/web";
 import { displayFormat, formatMemoryValue, unitSize, getCellWidthChars } from "./DisplayFormat";
 
 const ROW_HEIGHT: number = 24;
@@ -228,7 +227,7 @@ export const MemoryView: Component<{ version: () => any, writeAddr: number, writ
                                                     <span
                                                         class={style + " cursor-default tabular-nums whitespace-pre"}
                                                         style={{
-                                                            "margin-right": (i != chunks - 1) ? `${cellWidth - str.length}ch` : "0",
+                                                            "margin-right": (i != chunks - 1 || j != unitsPerChunk - 1) ? `${cellWidth + 1 - str.length}ch` : "0",
                                                             "display": "inline-block"
                                                         }}
                                                     >
@@ -238,14 +237,7 @@ export const MemoryView: Component<{ version: () => any, writeAddr: number, writ
                                             }
                                         }
                                         return (
-                                            <div
-                                                class="grid"
-                                                style={{
-                                                    "grid-auto-flow": "column",
-                                                    "grid-auto-columns": `${getCellWidthChars(bytesPerUnit)}ch`,
-                                                    "gap": "1ch",
-                                                }}
-                                            >
+                                            <div style={{ "white-space": "nowrap" }}>
                                                 {components}
                                             </div>
                                         );
