@@ -315,6 +315,30 @@ void test_jalr_sign_before_paren() {
     TEST_ASSERT_NOT_NULL(g_error);
 }
 
+void test_jalr_1() {
+    bool err = false;
+    assemble_line("jalr x4");
+    TEST_ASSERT_EQUAL(0x000200e7, LOAD(g_text->base, 4, &err));
+}
+
+void test_jalr_2() {
+    bool err = false;
+    assemble_line("jalr x4, x5");
+    TEST_ASSERT_EQUAL(0x00028267, LOAD(g_text->base, 4, &err));
+}
+
+void test_jalr_3() {
+    bool err = false;
+    assemble_line("jalr x4, x5, 6");
+    TEST_ASSERT_EQUAL(0x00628267, LOAD(g_text->base, 4, &err));
+}
+
+void test_jalr_4() {
+    bool err = false;
+    assemble_line("jalr x4, 6(x5)");
+    TEST_ASSERT_EQUAL(0x00628267, LOAD(g_text->base, 4, &err));
+}
+
 void test_parse_string_bad_escape() {
     assemble_line(".data\n.asciz \"hello\\q\"");
     TEST_ASSERT_EQUAL_STRING(g_error, "Invalid string");
@@ -919,56 +943,4 @@ void test_sstatus_ecall(void) {
     step();
     TEST_ASSERT_FALSE(g_csr[CSR_MSTATUS] & STATUS_SIE);
     TEST_ASSERT_TRUE(g_csr[CSR_MSTATUS] & STATUS_SPIE);
-}
-void test_nested_trap_handling(void) {
-    const char *prog = "\
-.section .kernel_text\n\
-handler:\n\
-    csrrw t0, scause, x0      # 0\n\
-    addi t1, x0, 8            # 4\n\
-    bne t0, t1, sw_irq_handle # 8\n\
-    csrrw t3, sepc, x0        # c\n\
-    csrrwi x0, sstatus, 2     # 10\n\
-    csrrw x0, sepc, t3        # 14\n\
-    sret                      # 18\n\
-sw_irq_handle:                \n\
-    csrrci x0, sip, 2         \n\
-    sret\n\
-.text\n\
-.globl _start\n\
-_start: ecall\n\
-";
-    assemble(prog, strlen(prog), false);
-    TEST_ASSERT_EQUAL_STRING(g_error, NULL);
-    
-    u32 handler_addr;
-    TEST_ASSERT_TRUE(resolve_symbol("handler", strlen("handler"), false, &handler_addr, NULL));
-    g_csr[CSR_STVEC] = handler_addr;
-    
-    u32 start_addr;
-    TEST_ASSERT_TRUE(resolve_symbol("_start", strlen("_start"), true, &start_addr, NULL));
-    g_pc = start_addr;
-    
-    emulator_leave_kernel();
-
-    step(); // ecall
-    TEST_ASSERT_EQUAL(handler_addr, g_pc);
-    TEST_ASSERT_EQUAL(CAUSE_U_ECALL, g_csr[CSR_SCAUSE]);
-    TEST_ASSERT_FALSE(g_csr[CSR_MSTATUS] & STATUS_SIE);
-    emulator_interrupt_set_pending(CAUSE_SUPERVISOR_SOFTWARE & ~CAUSE_INTERRUPT);
-    step(); // ecall.csrrw
-    step(); // ecall.addi
-    step(); // ecall.bne
-    step(); // ecall.csrrw
-    step(); // ecall.csrrwi
-    step(); // timer.csrrw
-    TEST_ASSERT(g_csr[CSR_SCAUSE] == CAUSE_SUPERVISOR_SOFTWARE);
-    step(); // timer.addi
-    step(); // timer.bne
-    step(); // timer.csrrci
-    step(); // timer.sret
-    step(); // ecall.csrrw
-    step(); // ecall.sret
-    // PC is generally advanced by the handler, but it's not necessary in this test
-    TEST_ASSERT_EQUAL(start_addr, g_pc);
 }

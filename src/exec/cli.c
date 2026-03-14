@@ -5,13 +5,13 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "ezld/include/ezld/linker.h"
-#include "ezld/include/ezld/runtime.h"
 #include "ares/callsan.h"
 #include "ares/core.h"
 #include "ares/elf.h"
 #include "ares/emulate.h"
 #include "ares/util.h"
+#include "ezld/include/ezld/linker.h"
+#include "ezld/include/ezld/runtime.h"
 #include "vendor/commander.h"
 
 // Type of command handler functions (c_*)
@@ -136,6 +136,11 @@ static void emulate_safe(void) {
                         "address 0x%08x, which hasn't been written to in the "
                         "current function\n",
                         g_pc, g_runtime_error_params[0]);
+                goto err;
+
+            case ERROR_INVALID_ECALL:
+                fprintf(stderr, "emulator: unhandled ecall %d at pc=0x%08x\n",
+                        g_runtime_error_params[0], g_pc);
                 goto err;
 
             default:
@@ -376,12 +381,11 @@ exit:
 
 static void c_assemble(void) {
     FILE *out = NULL;
-    assemble_from_file(g_next_arg, true);
-    if (g_error) goto exit;
-
     void *elf_contents = NULL;
     size_t elf_sz = 0;
     char *error = NULL;
+    assemble_from_file(g_next_arg, true);
+    if (g_error) goto exit;
 
     if (!elf_emit_obj(&elf_contents, &elf_sz, &error)) {
         fprintf(stderr, "assembler: %s\n", error);
@@ -606,8 +610,8 @@ int main(int argc, char **argv) {
                    opt_link);
     command_option(&cmd, "-o", "--output <file>", "choose output file name",
                    opt_o);
-    command_option(&cmd, "-s", "--sanitize",
-                   "enable ares sanitizers (callsan)", opt_sanitize);
+    command_option(&cmd, "-s", "--sanitize", "enable ares sanitizers (callsan)",
+                   opt_sanitize);
     command_parse(&cmd, argc, argv);
     g_cmd_args = (const char **)cmd.argv;
     g_cmd_args_len = cmd.argc;

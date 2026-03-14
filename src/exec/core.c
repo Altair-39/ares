@@ -307,7 +307,7 @@ bool parse_numeric(Parser *p, i32 *out) {
     }
     if (negative) value = -value;
     if (value < -2147483648LL || value > 4294967295LL) {
-        return false; 
+        return false;
     }
     *out = value;
     return true;
@@ -398,7 +398,7 @@ int parse_csr(Parser *p) {
     size_t len;
     parse_ident(p, &str, &len);
 
-    for (int i = 0; i < sizeof(CSR_NAMES) / sizeof(CSR_NAMES[0]); i++) {
+    for (size_t i = 0; i < sizeof(CSR_NAMES) / sizeof(CSR_NAMES[0]); i++) {
         if (CSR_NAMES[i] && str_eq_case(str, len, CSR_NAMES[i])) return i;
     }
 
@@ -566,7 +566,8 @@ const char *handle_alu_reg(Parser *p, const char *opcode, size_t opcode_len) {
     else if (str_eq_case(opcode, opcode_len, "sra")) inst = SRA(d, s1, s2);
     else if (str_eq_case(opcode, opcode_len, "mul")) inst = MUL(d, s1, s2);
     else if (str_eq_case(opcode, opcode_len, "mulh")) inst = MULH(d, s1, s2);
-    else if (str_eq_case(opcode, opcode_len, "mulhsu")) inst = MULHSU(d, s1, s2);
+    else if (str_eq_case(opcode, opcode_len, "mulhsu"))
+        inst = MULHSU(d, s1, s2);
     else if (str_eq_case(opcode, opcode_len, "mulhu")) inst = MULHU(d, s1, s2);
     else if (str_eq_case(opcode, opcode_len, "div")) inst = DIV(d, s1, s2);
     else if (str_eq_case(opcode, opcode_len, "divu")) inst = DIVU(d, s1, s2);
@@ -838,6 +839,7 @@ const char *handle_jump_reg(Parser *p, const char *opcode, size_t opcode_len) {
 
     skip_trailing(p);
     // jalr rs
+    // jalr rd, rs
     // jalr rd, rs, simm
     // jalr rd, simm(rs)
     if (str_eq_case(opcode, opcode_len, "jalr")) {
@@ -861,12 +863,16 @@ const char *handle_jump_reg(Parser *p, const char *opcode, size_t opcode_len) {
             if ((s = parse_reg(p)) == -1) return "Invalid rs";
             skip_trailing(p);
             if (!consume_if(p, ')')) return "Expected )";
-        } else {  // rs1, simm
-            if ((s = parse_reg(p)) == -1) return "Invalid rs";
+        } else if ((s = parse_reg(p)) != -1) {  // rd, rs / rd, rs, simm
             skip_trailing(p);
-            if (!consume_if(p, ',')) return "Expected ,";
-            skip_trailing(p);
-            if (!parse_numeric(p, &simm)) return "Invalid immediate";
+            if (consume_if(p, ',')) {  // rd, rs, simm
+                skip_trailing(p);
+                if (!parse_numeric(p, &simm)) return "Invalid immediate";
+            } else {  // rd, rs
+                simm = 0;
+            }
+        } else {
+            return "Invalid operand";
         }
         if (simm >= -2048 && simm <= 2047)
             asm_emit(JALR(d, s, simm), p->startline);
@@ -1183,9 +1189,9 @@ static void prepare_default_syms(void) {
 }
 
 /*
-    NOTE: both binutils and RARS do not support instructions spanning more lines, like
-    "li a0,\n93"
-    But RARS does support it for .byte etc, so for compatibility we do it too
+    NOTE: both binutils and RARS do not support instructions spanning more
+   lines, like "li a0,\n93" But RARS does support it for .byte etc, so for
+   compatibility we do it too
 */
 
 export void assemble(const char *txt, size_t s, bool allow_externs) {

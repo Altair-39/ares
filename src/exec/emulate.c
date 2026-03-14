@@ -23,11 +23,15 @@ extern Error g_runtime_error_type;
 
 static int g_privilege_level = PRIV_USER;
 
+static size_t i32_to_str(i32 val, char buf[12]);
+
 // end is inclusive, like in Verilog
 static inline u32 extr(u32 val, u32 end, u32 start) {
+    assert(end <= 31 && start <= end);
     // I need to do this here because shifting by >= bitsize is UB
+    // start=0 end=31 means end+1-start=32, and shifting an u32 by 32 is UB
     if (start == 0 && end == 31) return val;
-    u32 mask = (1ul << (end + 1 - start)) - 1;
+    u32 mask = (1u << (end + 1 - start)) - 1;
     return (val >> start) & mask;
 }
 
@@ -73,33 +77,21 @@ static inline u32 remu32(u32 a, u32 b) {
 Section *emulator_get_section(u32 addr) {
     for (size_t i = 0; i < ARES_ARRAY_LEN(&g_sections); i++) {
         Section *sec = *ARES_ARRAY_GET(&g_sections, i);
-        if (addr >= sec->base && addr < sec->limit) {
-            return sec;
-        }
+        if (addr >= sec->base && addr < sec->limit) return sec;
     }
-
     return NULL;
 }
 
 u8 *emulator_get_addr(u32 addr, int size, Section **out_sec) {
     Section *addr_sec = emulator_get_section(addr);
-
-    if (out_sec) {
-        *out_sec = addr_sec;
-    }
-
-    if (!addr_sec) {
-        return NULL;
-    }
-
+    if (out_sec) *out_sec = addr_sec;
+    if (!addr_sec) return NULL;
+    u32 end;
+    if (__builtin_add_overflow(addr, size, &end)) return NULL;
     // NOTE: addr+size is one over the end of the accessed region
     // so it is correct for it to be > and not >=
-    if (addr + size > addr_sec->contents.len + addr_sec->base) {
-        return NULL;
-    }
-
+    if (end > addr_sec->contents.len + addr_sec->base) return NULL;
     return addr_sec->contents.buf + (addr - addr_sec->base);
-    return NULL;
 }
 
 u32 LOAD(u32 addr, int size, bool *err) {
@@ -113,7 +105,7 @@ u32 LOAD(u32 addr, int size, bool *err) {
     }
 
     if (mem_sec->base == MMIO_BASE) {
-        u32 ret;
+        u32 ret = 0;
         *err = !mmio_read(addr - MMIO_BASE, size, &ret);
         return ret;
     } else if (!mem) {
@@ -181,12 +173,10 @@ void do_ebreak() {
 
 void do_syscall() {
     u32 scause = CAUSE_U_ECALL;
-    if (g_privilege_level == PRIV_SUPERVISOR) {
-        scause = CAUSE_S_ECALL;
-    }
+    if (g_privilege_level == PRIV_SUPERVISOR) scause = CAUSE_S_ECALL;
 
     if (!ARES_ARRAY_IS_EMPTY(&g_kernel_text->contents)) {
-        emulator_deliver_interrupt(CAUSE_U_ECALL);
+        emulator_deliver_interrupt(scause);
         return;
     }
 
@@ -196,16 +186,8 @@ void do_syscall() {
     if (g_regs[17] == 1) {
         // print int
         char buffer[12];
-        int i = 0;
-        if ((i32)param < 0) {
-            putchar('-');
-            param = -param;
-        }
-        do {
-            buffer[i++] = (param % 10) + '0';
-            param /= 10;
-        } while (param > 0);
-        while (i--) putchar(buffer[i]);
+        size_t len = i32_to_str((i32)g_regs[10], buffer);
+        for (size_t i = 0; i < len; i++) putchar(buffer[i]);
     } else if (g_regs[17] == 4) {
         // print string
         u32 i = 0;
@@ -235,6 +217,10 @@ void do_syscall() {
         }
     } else if (g_regs[17] == 93 || g_regs[17] == 7 || g_regs[17] == 10) {
         emu_exit();
+    } else {
+        g_runtime_error_params[0] = g_regs[17];
+        g_runtime_error_type = ERROR_INVALID_ECALL;
+        return;
     }
 
     g_pc += 4;
@@ -296,7 +282,7 @@ void emulate() {
     g_got_breakpoint = 0;
     bool err;
 
-    if (g_csr[CSR_MSTATUS] & STATUS_SIE) {
+    if (g_privilege_level == PRIV_USER || (g_csr[CSR_MSTATUS] & STATUS_SIE)) {
         u32 pending = g_csr[CSR_MIP] & g_csr[CSR_MIE];
         if (pending != 0) {
             int intno = __builtin_ctz(pending);
@@ -382,14 +368,15 @@ void emulate() {
         if (!callsan_can_load(rs1)) return;
         if (!callsan_can_load(rs2)) return;
         bool T = false;
-        if ((funct3 >> 1) == 0) T = S1 == S2;
-        else if ((funct3 >> 1) == 2) T = (i32)S1 < (i32)S2;
-        else if ((funct3 >> 1) == 3) T = S1 < S2;
+        if ((funct3 >> 1) == 0) T = S1 == S2;                // EQ/NE
+        else if ((funct3 >> 1) == 2) T = (i32)S1 < (i32)S2;  // LT/GE
+        else if ((funct3 >> 1) == 3) T = S1 < S2;            // LTU/GEU
         else {
             g_runtime_error_params[0] = g_pc;
             g_runtime_error_type = ERROR_UNHANDLED_INSN;
             return;
         }
+        // invert: EQ->NE, LT->GE, LTU->BGEU
         if (funct3 & 1) T = !T;
         g_pc += T ? btype : 4;
         return;
@@ -510,52 +497,61 @@ void emulate() {
     }
     // SYSTEM instructions
     if (opcode == 0x73) {
-        if (funct3 == 0b000) {
-            if (itype == 0x102) {  // SRET
-                do_sret();
-            } else if (itype == 0) {  // ECALL
-                do_syscall();
-            } else if (itype == 1) {
-                do_ebreak();
-            }
+        if (funct3 == 0b000 && itype == 0) {
+            do_syscall();
             return;
-        } else if (funct3 == 0b001) {  // CSRRW
-            u32 old = rdcsr(itype);
-            if (rs1 != 0) wrcsr(itype, g_regs[rs1]);
-            g_regs[rd] = old;
-        } else if (funct3 == 0b010) {  // CSRRS
-            u32 old = rdcsr(itype);
-            if (rs1 != 0) wrcsr(itype, old | g_regs[rs1]);
-            g_regs[rd] = old;
-        } else if (funct3 == 0b011) {  // CSRRC
-            u32 old = rdcsr(itype);
-            if (rs1 != 0) wrcsr(itype, old & ~g_regs[rs1]);
-            g_regs[rd] = old;
-        } else if (funct3 == 0b101) {  // CSRRWI
-            g_regs[rd] = g_csr[itype];
-            if (rs1 != 0) wrcsr(itype, rs1);  // used as imm
-        } else if (funct3 == 0b110) {         // CSRRSI
-            u32 old = rdcsr(itype);
-            if (rs1 != 0) wrcsr(itype, old | rs1);
-            g_regs[rd] = old;
-        } else if (funct3 == 0b111) {  // CSRRCI
-            u32 old = rdcsr(itype);
-            if (rs1 != 0) wrcsr(itype, old & ~rs1);
-            g_regs[rd] = old;
-        } else {
-            goto end;
         }
-        callsan_store(rd);
+        if (funct3 == 0b000 && itype == 1) {
+            do_ebreak();
+            return;
+        }
 
-        // TODO: CSR instructions themselves are not privileged, s/m CSRs are,
-        // so this is wrong, but close enough
+        // from here on, all others require supervisor mode
+        // slight imprecision for CSRs in general,
+        // but we only support privileged CSRs
+
         if (g_privilege_level == PRIV_USER) {
             g_runtime_error_params[0] = g_pc;
             g_runtime_error_type = ERROR_PROTECTION;
+            return;
         }
 
+        if (funct3 == 0b000) {
+            if (itype == 0x102) {
+                do_sret();
+                return;
+            }
+        } else {                    // all CSR ops
+            if (funct3 == 0b001) {  // CSRRW
+                u32 old = rdcsr(itype);
+                wrcsr(itype, g_regs[rs1]);
+                g_regs[rd] = old;
+            } else if (funct3 == 0b010) {  // CSRRS
+                u32 old = rdcsr(itype);
+                if (rs1 != 0) wrcsr(itype, old | g_regs[rs1]);
+                g_regs[rd] = old;
+            } else if (funct3 == 0b011) {  // CSRRC
+                u32 old = rdcsr(itype);
+                if (rs1 != 0) wrcsr(itype, old & ~g_regs[rs1]);
+                g_regs[rd] = old;
+            } else if (funct3 == 0b101) {  // CSRRWI
+                g_regs[rd] = rdcsr(itype);
+                wrcsr(itype, rs1);         // used as imm
+            } else if (funct3 == 0b110) {  // CSRRSI
+                u32 old = rdcsr(itype);
+                if (rs1 != 0) wrcsr(itype, old | rs1);
+                g_regs[rd] = old;
+            } else if (funct3 == 0b111) {  // CSRRCI
+                u32 old = rdcsr(itype);
+                if (rs1 != 0) wrcsr(itype, old & ~rs1);
+                g_regs[rd] = old;
+            } else {
+                goto end;
+            }
+            g_reg_written = rd;
+            callsan_store(rd);
+        }
         g_pc += 4;
-        g_reg_written = rd;
         return;
     }
 
@@ -666,8 +662,9 @@ size_t disassemble(u32 inst, char *buf, size_t buflen) {
 
     // LUI
     if (opcode == 0b0110111) {
-        // to match with RARS,
-        // li a0, 0xaabbccdd must be shown as
+        // it has been requested to be compatible with RARS here
+        // and RARS does the following:
+        // li a0, 0xaabbccdd becomes
         // lui x10, 0xfffaabbd
         // addi x10, 0xfffffcdd
         APPEND_STR("lui x");
@@ -708,13 +705,17 @@ size_t disassemble(u32 inst, char *buf, size_t buflen) {
 
     // Branch
     if (opcode == 0b1100011) {
-        const char *name = "";
+        const char *name;
         if (funct3 == 0b000) name = "beq";
         else if (funct3 == 0b001) name = "bne";
         else if (funct3 == 0b100) name = "blt";
         else if (funct3 == 0b101) name = "bge";
         else if (funct3 == 0b110) name = "bltu";
         else if (funct3 == 0b111) name = "bgeu";
+        else {
+            APPEND_STR("<invalid branch funct3>");
+            goto done;
+        }
         APPEND_STR(name);
         APPEND_STR(" x");
         APPEND_U32(rs1);
@@ -727,12 +728,16 @@ size_t disassemble(u32 inst, char *buf, size_t buflen) {
 
     // Load
     if (opcode == 0b0000011) {
-        const char *name = "";
+        const char *name;
         if (funct3 == 0b000) name = "lb";
         else if (funct3 == 0b001) name = "lh";
         else if (funct3 == 0b010) name = "lw";
         else if (funct3 == 0b100) name = "lbu";
         else if (funct3 == 0b101) name = "lhu";
+        else {
+            APPEND_STR("<invalid load funct3>");
+            goto done;
+        }
         APPEND_STR(name);
         APPEND_STR(" x");
         APPEND_U32(rd);
@@ -746,10 +751,14 @@ size_t disassemble(u32 inst, char *buf, size_t buflen) {
 
     // Store
     if (opcode == 0b0100011) {
-        const char *name = "";
+        const char *name;
         if (funct3 == 0b000) name = "sb";
         else if (funct3 == 0b001) name = "sh";
         else if (funct3 == 0b010) name = "sw";
+        else {
+            APPEND_STR("<invalid store funct3>");
+            goto done;
+        }
         APPEND_STR(name);
         APPEND_STR(" x");
         APPEND_U32(rs2);
@@ -762,9 +771,11 @@ size_t disassemble(u32 inst, char *buf, size_t buflen) {
     }
 
     // I-type arithmetic
+    // printing is very ugly, but it is made to match RARS
+    // especially in LUI+ADDI handling
     if (opcode == 0b0010011) {
         bool shift = false;
-        const char *name = "";
+        const char *name;
         if (funct3 == 0b000) name = "addi";
         else if (funct3 == 0b010) name = "slti";
         else if (funct3 == 0b011) name = "sltiu";
@@ -774,6 +785,10 @@ size_t disassemble(u32 inst, char *buf, size_t buflen) {
         else if (funct3 == 0b001 && funct7 == 0) shift = true, name = "slli";
         else if (funct3 == 0b101 && funct7 == 0) shift = true, name = "srli";
         else if (funct3 == 0b101 && funct7 == 32) shift = true, name = "srai";
+        else {
+            APPEND_STR("<invalid I-type funct3>");
+            goto done;
+        }
         APPEND_STR(name);
         APPEND_STR(" x");
         APPEND_U32(rd);
@@ -781,13 +796,15 @@ size_t disassemble(u32 inst, char *buf, size_t buflen) {
         APPEND_U32(rs1);
         APPEND_STR(", ");
         if (shift) APPEND_U32(itype & 31);
-        else APPEND_U32_HEX((u32)itype);
+        else
+            APPEND_U32_HEX(
+                (u32)itype);  // compliant with RARS disassembly in hex mode
         goto done;
     }
 
     // R-type
     if (opcode == 0b0110011) {
-        const char *name = "";
+        const char *name;
         if (funct3 == 0b000 && funct7 == 0) name = "add";
         else if (funct3 == 0b000 && funct7 == 32) name = "sub";
         else if (funct3 == 0b001 && funct7 == 0) name = "sll";
@@ -806,6 +823,10 @@ size_t disassemble(u32 inst, char *buf, size_t buflen) {
         else if (funct3 == 0b101 && funct7 == 1) name = "divu";
         else if (funct3 == 0b110 && funct7 == 1) name = "rem";
         else if (funct3 == 0b111 && funct7 == 1) name = "remu";
+        else {
+            APPEND_STR("<invalid R-type funct3>");
+            goto done;
+        }
         APPEND_STR(name);
         APPEND_STR(" x");
         APPEND_U32(rd);
@@ -818,20 +839,24 @@ size_t disassemble(u32 inst, char *buf, size_t buflen) {
 
     // SYSTEM
     if (opcode == 0x73) {
-        const char *name = "";
         u32 csr = extr(inst, 31, 20);  // CSR address is in the immediate field
 
         if (funct3 == 0b000) {
+            const char *name;
             if (itype == 0x102) name = "sret";
             else if (itype == 0) name = "ecall";
             else if (itype == 1) name = "ebreak";
+            else {
+                APPEND_STR("<unhandled system instruction>");
+                goto done;
+            }
             APPEND_STR(name);
         } else if (funct3 == 0b001) {
             // csrrw rd, csr, rs1
             APPEND_STR("csrrw x");
             APPEND_U32(rd);
             APPEND_STR(", ");
-            APPEND_U32(csr);
+            APPEND_U32_HEX(csr);
             APPEND_STR(", x");
             APPEND_U32(rs1);
         } else if (funct3 == 0b010) {
@@ -839,7 +864,7 @@ size_t disassemble(u32 inst, char *buf, size_t buflen) {
             APPEND_STR("csrrs x");
             APPEND_U32(rd);
             APPEND_STR(", ");
-            APPEND_U32(csr);
+            APPEND_U32_HEX(csr);
             APPEND_STR(", x");
             APPEND_U32(rs1);
         } else if (funct3 == 0b011) {
@@ -847,7 +872,7 @@ size_t disassemble(u32 inst, char *buf, size_t buflen) {
             APPEND_STR("csrrc x");
             APPEND_U32(rd);
             APPEND_STR(", ");
-            APPEND_U32(csr);
+            APPEND_U32_HEX(csr);
             APPEND_STR(", x");
             APPEND_U32(rs1);
         } else if (funct3 == 0b101) {
@@ -855,7 +880,7 @@ size_t disassemble(u32 inst, char *buf, size_t buflen) {
             APPEND_STR("csrrwi x");
             APPEND_U32(rd);
             APPEND_STR(", ");
-            APPEND_U32(csr);
+            APPEND_U32_HEX(csr);
             APPEND_STR(", ");
             APPEND_U32(rs1);  // rs1 field used as 5-bit unsigned immediate
         } else if (funct3 == 0b110) {
@@ -863,7 +888,7 @@ size_t disassemble(u32 inst, char *buf, size_t buflen) {
             APPEND_STR("csrrsi x");
             APPEND_U32(rd);
             APPEND_STR(", ");
-            APPEND_U32(csr);
+            APPEND_U32_HEX(csr);
             APPEND_STR(", ");
             APPEND_U32(rs1);
         } else if (funct3 == 0b111) {
@@ -871,7 +896,7 @@ size_t disassemble(u32 inst, char *buf, size_t buflen) {
             APPEND_STR("csrrci x");
             APPEND_U32(rd);
             APPEND_STR(", ");
-            APPEND_U32(csr);
+            APPEND_U32_HEX(csr);
             APPEND_STR(", ");
             APPEND_U32(rs1);
         }

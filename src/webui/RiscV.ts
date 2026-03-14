@@ -276,6 +276,14 @@ export class WasmInterface {
           str = convertNumber(runtimeParam1, false);
           this.textBuffer += `CallSan: ${pcString}\nAttempted to read from stack address 0x${str}, which hasn't been written to in the current function.\n`;
           break;
+        case 11:
+          str = convertNumber(runtimeParam1, false);
+          this.textBuffer += `ERROR: protection error\n`;
+          break;
+        case 12:
+          str = convertNumber(runtimeParam1, false);
+          this.textBuffer += `ERROR: Environment call ${runtimeParam1.toString()} is not supported\n`;
+          break;
         default:
           this.textBuffer += `ERROR${errorType}: ${pcString} ${this.runtimeErrorParams[0].toString(
             16,

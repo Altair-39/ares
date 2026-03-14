@@ -161,7 +161,7 @@ typedef enum Error : u32 {
     ERROR_CALLSAN_RET_EMPTY = 9,
     ERROR_CALLSAN_LOAD_STACK = 10,
     ERROR_PROTECTION = 11,
-    ERROR_DOUBLE = 12
+    ERROR_INVALID_ECALL = 12,
 } Error;
 
 ARES_ARRAY_TYPE(SectionPtr);
