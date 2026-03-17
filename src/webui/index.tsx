@@ -9,21 +9,16 @@ import wasmUrl from "./main.wasm?url";
 const root = document.getElementById('root');
 
 export async function fetchTestData(): Promise<TestData | null> {
-  const testsuiteName = new URLSearchParams(window.location.search).get(
-    "testsuite",
-  );
+  const testsuiteName = new URLSearchParams(window.location.search).get("testsuite");
   if (!testsuiteName) return null;
-
   const [asmRes, jsonRes, txtRes] = await Promise.all([
     fetch(`${testsuiteName}.S`),
     fetch(`${testsuiteName}.json`),
     fetch(`${testsuiteName}.txt`),
   ]);
-
   if (!asmRes.ok || !jsonRes.ok || !txtRes.ok) {
     throw new Error("Failed to load test suite files");
   }
-
   return {
     testPrefix: await asmRes.text(),
     testcases: await jsonRes.json(),
@@ -31,17 +26,31 @@ export async function fetchTestData(): Promise<TestData | null> {
   };
 }
 
-// SAFETY: wasmInterface is only accessed by App, which is called after
 export let wasmInterface!: WasmInterface;
 export let emulator!: Emulator;
 export let testData!: TestData;
-(async () => {
-  const res = await fetch(wasmUrl);
-  const buffer = await res.arrayBuffer();
-  let wi = WasmInterface.loadModule(buffer);
-  let tc = fetchTestData();
-  wasmInterface = await wi;
-  testData = (await tc)!;
+
+async function initEmulator() {
+  if (import.meta.hot?.data.emulator) {
+    wasmInterface = import.meta.hot.data.wasmInterface;
+    emulator = import.meta.hot.data.emulator;
+    testData = import.meta.hot.data.testData;
+    return;
+  }
+
+  const [wi, tc] = await Promise.all([
+    WasmInterface.loadModule(await fetch(wasmUrl).then(r => r.arrayBuffer())),
+    fetchTestData(),
+  ]);
+  wasmInterface = wi;
+  testData = tc!;
   emulator = new Emulator(wasmInterface, testData);
-  render(() => <App />, root!);
-})();
+
+  if (import.meta.hot) {
+    import.meta.hot.data.wasmInterface = wasmInterface;
+    import.meta.hot.data.emulator = emulator;
+    import.meta.hot.data.testData = testData;
+  }
+}
+
+initEmulator().then(() => render(() => <App />, root!));
