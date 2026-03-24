@@ -435,7 +435,7 @@ static void c_link(void) {
     ezld_array_free(cfg.cfg_sections);
 }
 
-static void c_hexdump() {
+static void c_hexdump(void) {
     FILE *file = fopen(g_next_arg, "rb");
 
     if (!file) {

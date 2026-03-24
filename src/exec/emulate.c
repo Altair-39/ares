@@ -166,12 +166,12 @@ void STORE(u32 addr, u32 val, int size, bool *err) {
 
 // ebreak only does a breakpoint if the emulator caller knows about it
 // otherwise, it does nothing to allow runs to complete
-void do_ebreak() {
+void do_ebreak(void) {
     g_got_breakpoint = 1;
     g_pc += 4;
 }
 
-void do_syscall() {
+void do_syscall(void) {
     u32 scause = CAUSE_U_ECALL;
     if (g_privilege_level == PRIV_SUPERVISOR) scause = CAUSE_S_ECALL;
 
@@ -226,7 +226,7 @@ void do_syscall() {
     g_pc += 4;
 }
 
-void do_sret() {
+void do_sret(void) {
     // SRET is only legal in supervisor
     if (g_privilege_level != PRIV_SUPERVISOR) {
         g_runtime_error_params[0] = g_pc;
@@ -274,7 +274,7 @@ void wrcsr(u32 csr, u32 val) {
     g_csr[csr] = (g_csr[csr] & ~mask) | (val & mask);
 }
 
-void emulate() {
+void emulate(void) {
     g_runtime_error_type = ERROR_NONE;
     g_mem_written_len = 0;
     g_reg_written = 0;
@@ -925,9 +925,9 @@ size_t emu_disassemble(u32 inst) {
     return disassemble(inst, g_emu_disassemble_buf, 64);
 }
 
-void emulator_enter_kernel() { g_privilege_level = PRIV_SUPERVISOR; }
+void emulator_enter_kernel(void) { g_privilege_level = PRIV_SUPERVISOR; }
 
-void emulator_leave_kernel() { g_privilege_level = PRIV_USER; }
+void emulator_leave_kernel(void) { g_privilege_level = PRIV_USER; }
 
 void emulator_interrupt_set_pending(u32 intno) {
     g_csr[CSR_MIP] |= 1u << intno;

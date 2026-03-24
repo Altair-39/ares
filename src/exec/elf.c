@@ -422,9 +422,9 @@ static bool make_core(u8 **out, size_t *out_sz, size_t *name_off,
     }
 
     return true;
-fail:
-    free(region);
-    return false;
+    // fail:
+    //     free(region);
+    //     return false;
 }
 
 // This function makes an ELF string table
@@ -501,9 +501,9 @@ static bool make_strtab(char **out, size_t *out_sz, bool inc_externs,
     *out_sz = strtab_sz;
     return true;
 
-fail:
-    free(strtab);
-    return false;
+    // fail:
+    //     free(strtab);
+    //     return false;
 }
 
 static bool make_symtab(u8 **out, size_t *out_sz, size_t *ent_num,
@@ -611,9 +611,9 @@ static bool make_rela(u8 **out, size_t *out_sz, size_t file_off,
     *out_sz = rela_count * sizeof(ElfRelaEntry);
     return true;
 
-fail:
-    free(relas);
-    return false;
+    // fail:
+    //     free(relas);
+    //     return false;
 }
 
 bool elf_emit_exec(void **out, size_t *len, char **error) {
@@ -634,12 +634,11 @@ bool elf_emit_exec(void **out, size_t *len, char **error) {
         return false;
     }
 
-    ARES_CHECK_CALL(make_strtab(&strtab, &strtab_sz, true, true, error),
-                      fail);
+    ARES_CHECK_CALL(make_strtab(&strtab, &strtab_sz, true, true, error), fail);
     ARES_CHECK_CALL(make_core(&core, &core_sz, &name_off, &phdrs_start,
-                                &shdrs_start, &phnum, &shnum, NULL, NULL,
-                                sizeof(ElfHeader), 1, 0, true, true, error),
-                      fail);
+                              &shdrs_start, &phnum, &shnum, NULL, NULL,
+                              sizeof(ElfHeader), 1, 0, true, true, error),
+                    fail);
 
     ElfHeader e_hdr = {
         .magic = {0x7F, 'E', 'L', 'F'},  // ELF magic
@@ -716,8 +715,7 @@ bool elf_emit_obj(void **out, size_t *len, char **error) {
     size_t symtab_entnum = 0;
     size_t relas_sz = 0;
 
-    ARES_CHECK_CALL(make_strtab(&strtab, &strtab_sz, true, true, error),
-                      fail);
+    ARES_CHECK_CALL(make_strtab(&strtab, &strtab_sz, true, true, error), fail);
     ARES_CHECK_CALL(
         make_core(&core, &core_sz, &name_off, &phdrs_start, &shdrs_start,
                   &phnum, &shnum, &reloc_idx, &reloc_num, sizeof(ElfHeader), 2,
@@ -839,8 +837,8 @@ bool elf_load(u8 *elf_contents, size_t elf_len, char **error) {
         return false;
     }
 
-    ElfProgramHeader *phdrs =
-        (ElfProgramHeader *)(elf_contents + e_header->phdrs_off);
+    // ElfProgramHeader *phdrs =
+    //     (ElfProgramHeader *)(elf_contents + e_header->phdrs_off);
     ElfSectionHeader *shdrs =
         (ElfSectionHeader *)(elf_contents + e_header->shdrs_off);
 

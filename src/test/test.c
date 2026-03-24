@@ -1,17 +1,21 @@
-#include <unity.h>
-#include <string.h>
-#include <stdlib.h>
 #include <stdbool.h>
-#include "../exec/ares/emulate.h"
+#include <stdlib.h>
+#include <string.h>
+#include <unity.h>
+
 #include "../exec/ares/core.h"
+#include "../exec/ares/emulate.h"
 
 void setUp(void) {}
-void tearDown(void) {
-    free_runtime();
-}
+void tearDown(void) { free_runtime(); }
 
-// need this wrapper because TEST_ASSERT_EQUAL_STRING_LEN doesn't check that the length matches
-#define TEST_ASSERT_EQUAL_STR(x, y, z) { TEST_ASSERT_EQUAL(strlen(x), z); TEST_ASSERT_EQUAL_STRING_LEN(x, y, z); }
+// need this wrapper because TEST_ASSERT_EQUAL_STRING_LEN doesn't check that the
+// length matches
+#define TEST_ASSERT_EQUAL_STR(x, y, z)         \
+    {                                          \
+        TEST_ASSERT_EQUAL(strlen(x), z);       \
+        TEST_ASSERT_EQUAL_STRING_LEN(x, y, z); \
+    }
 
 static Parser init_parser(const char *str) {
     Parser p;
@@ -132,9 +136,7 @@ void test_parse_quoted_str_invalid_escape(void) {
     TEST_ASSERT_FALSE(ok);
 }
 
-void assemble_line(const char *line) {
-    assemble(line, strlen(line), false);
-}
+void assemble_line(const char *line) { assemble(line, strlen(line), false); }
 
 void test_unknown_opcode(void) {
     assemble_line("unhandled");
@@ -182,13 +184,12 @@ void test_sw_immediate_out_of_range(void) {
 }
 
 void test_sw_immediate_negative(void) {
+    bool err;
     assemble_line("sw x1, -1(x2)");
-    u32 word;
     TEST_ASSERT_EQUAL_INT(g_text->contents.len, 4);
-    memcpy(&word, g_text->contents.buf, 4);
+    u32 word = LOAD(g_text->base, 4, &err);
     TEST_ASSERT_EQUAL_INT(word, 0xfe112fa3);
 }
-
 
 void test_instruction_trailing_comma(void) {
     assemble_line("addi x1, x2, 300,");
@@ -234,7 +235,6 @@ void test_shift_invalid_imm_2(void) {
     TEST_ASSERT_EQUAL_STRING(g_error, "Invalid shift immediate");
 }
 
-
 void test_add_invalid_reg_4(void) {
     assemble_line("add x0, x$, x0");
     TEST_ASSERT_EQUAL_STRING(g_error, "Invalid rs1");
@@ -250,35 +250,32 @@ void test_instruction_with_trailing_garbage(void) {
     TEST_ASSERT_EQUAL_STRING(g_error, "Expected newline");
 }
 
-void test_parse_directives_nums() {
-    // TODO: make tests endianness independent
-    u32 word;
+void test_parse_directives_nums(void) {
+    bool err;
     assemble_line(".data\nvar: .WORD 5");
     TEST_ASSERT_EQUAL_INT(g_data->contents.len, 4);
-    memcpy(&word, g_data->contents.buf, 4);
+    u32 word = LOAD(g_data->base, 4, &err);
     TEST_ASSERT_EQUAL_INT(word, 5);
     free_runtime();
 
-    u16 half; 
     assemble_line(".DATA\nvar: .HALF 5");
     TEST_ASSERT_EQUAL_INT(g_data->contents.len, 2);
-    memcpy(&half, g_data->contents.buf, 2);
+    u16 half = LOAD(g_data->base, 2, &err);
     TEST_ASSERT_EQUAL_INT(half, 5);
     free_runtime();
 
-    u8 byte;
     assemble_line(".data\nvar: .byte 5");
     TEST_ASSERT_EQUAL_INT(g_data->contents.len, 1);
-    memcpy(&byte, g_data->contents.buf, 1);
+    u8 byte = LOAD(g_data->base, 1, &err);
     TEST_ASSERT_EQUAL_INT(byte, 5);
 }
 
-void test_parse_directives_nums_invalid() {
+void test_parse_directives_nums_invalid(void) {
     assemble_line(".data\nvar: .word 0xG");
     TEST_ASSERT_EQUAL_STRING(g_error, "Invalid word");
 }
 
-void test_parse_directives_nums_oob() {
+void test_parse_directives_nums_oob(void) {
     assemble_line(".data\nvar: .half 0x10000");
     TEST_ASSERT_EQUAL_STRING(g_error, "Out of bounds half");
     free_runtime();
@@ -296,55 +293,55 @@ void test_parse_directives_nums_oob() {
     free_runtime();
 }
 
-void test_parse_numeric_hex_prefix_no_digits() {
+void test_parse_numeric_hex_prefix_no_digits(void) {
     assemble_line(".data\nvar: .word 0x");
     TEST_ASSERT_EQUAL_STRING(g_error, "Invalid word");
 }
-void test_parse_numeric_bin_prefix_no_digits() {
+void test_parse_numeric_bin_prefix_no_digits(void) {
     assemble_line(".data\nvar: .word 0b");
     TEST_ASSERT_EQUAL_STRING(g_error, "Invalid word");
 }
 
-void test_branch_cross_section_label() {
+void test_branch_cross_section_label(void) {
     assemble_line(".data\nfoo: .word 0\n.text\nbeq a0, a1, foo");
     TEST_ASSERT_NOT_NULL(g_error);
 }
 
-void test_jalr_sign_before_paren() {
+void test_jalr_sign_before_paren(void) {
     assemble_line("jalr a0, -(a1)");
     TEST_ASSERT_NOT_NULL(g_error);
 }
 
-void test_jalr_1() {
+void test_jalr_1(void) {
     bool err = false;
     assemble_line("jalr x4");
     TEST_ASSERT_EQUAL(0x000200e7, LOAD(g_text->base, 4, &err));
 }
 
-void test_jalr_2() {
+void test_jalr_2(void) {
     bool err = false;
     assemble_line("jalr x4, x5");
     TEST_ASSERT_EQUAL(0x00028267, LOAD(g_text->base, 4, &err));
 }
 
-void test_jalr_3() {
+void test_jalr_3(void) {
     bool err = false;
     assemble_line("jalr x4, x5, 6");
     TEST_ASSERT_EQUAL(0x00628267, LOAD(g_text->base, 4, &err));
 }
 
-void test_jalr_4() {
+void test_jalr_4(void) {
     bool err = false;
     assemble_line("jalr x4, 6(x5)");
     TEST_ASSERT_EQUAL(0x00628267, LOAD(g_text->base, 4, &err));
 }
 
-void test_parse_string_bad_escape() {
+void test_parse_string_bad_escape(void) {
     assemble_line(".data\n.asciz \"hello\\q\"");
     TEST_ASSERT_EQUAL_STRING(g_error, "Invalid string");
 }
 
-void test_branch_forward_out_of_range() {
+void test_branch_forward_out_of_range(void) {
     char buf[8192 + 64];
     strcpy(buf, ".text\nbeq a0, a1, far\n");
     for (int i = 0; i < 2048; i++) strcat(buf, "nop\n");
@@ -353,8 +350,7 @@ void test_branch_forward_out_of_range() {
     TEST_ASSERT_EQUAL_STRING(g_error, "Branch immediate too large");
 }
 
-
-void test_globl_without_definition() {
+void test_globl_without_definition(void) {
     assemble_line(".text\n.globl foo\nret");
     TEST_ASSERT_NULL(g_error);
     u32 addr;
@@ -362,23 +358,37 @@ void test_globl_without_definition() {
     TEST_ASSERT_FALSE(resolve_symbol("foo", 3, true, &addr, &sec));
 }
 
-void test_parse_directives_str() {
+void test_parse_directives_str(void) {
     assemble_line(".data\nstr: .ASCII \"hi\", \"hi\"");
     TEST_ASSERT_EQUAL_STR("hihi", g_data->contents.buf, g_data->contents.len);
     free_runtime();
 
     assemble_line(".data\nstr: .string \"hi\"");
     TEST_ASSERT_EQUAL_INT(g_data->contents.len, 3);
-    TEST_ASSERT_EQUAL_CHAR_ARRAY("hi\0", g_data->contents.buf, g_data->contents.len);
+    TEST_ASSERT_EQUAL_CHAR_ARRAY("hi\0", g_data->contents.buf,
+                                 g_data->contents.len);
     free_runtime();
 }
 
-void test_parse_multiple_definitions() {
-    assemble_line(".data\nvar: .word 5\nvar: .word 10");
-    TEST_ASSERT_EQUAL_STRING(g_error, "Multiple definitions for the same label");
+void test_unconsumed_str(void) {
+    assemble_line(".data\nstr: .ascii");
+    TEST_ASSERT_EQUAL_STRING(g_error, "Invalid string");
 }
 
-void test_parse_symbol_resolution_error() {
+void test_unterminated_str(void) {
+    assemble_line(".data\nstr: .ascii \"hi");
+    TEST_ASSERT_EQUAL_STRING(g_error, "Invalid string");
+}
+
+#define STRING_SIZE(s) (sizeof(s) - 1)
+
+void test_parse_multiple_definitions(void) {
+    assemble_line(".data\nvar: .word 5\nvar: .word 10");
+    TEST_ASSERT_EQUAL_STRING(g_error,
+                             "Multiple definitions for the same label");
+}
+
+void test_parse_symbol_resolution_error(void) {
     assemble_line("j unknown_symbol\n");
     TEST_ASSERT_EQUAL_STRING("Label not found", g_error);
 }
@@ -387,7 +397,8 @@ void test_resolve_text_symbol_found(void) {
     assemble_line("mylabel: addi a0, a0, 0");
     u32 addr;
     Section *sec;
-    bool found = resolve_symbol("mylabel", strlen("mylabel"), false, &addr, &sec);
+    bool found =
+        resolve_symbol("mylabel", strlen("mylabel"), false, &addr, &sec);
     TEST_ASSERT_TRUE(found);
     TEST_ASSERT_EQUAL(sec, g_text);
     TEST_ASSERT_TRUE(addr >= g_text->base && addr < g_text->limit);
@@ -397,7 +408,8 @@ void test_resolve_data_symbol_found(void) {
     assemble_line(".data\nmylabel: .word 1234");
     u32 addr;
     Section *sec;
-    bool found = resolve_symbol("mylabel", strlen("mylabel"), false, &addr, &sec);
+    bool found =
+        resolve_symbol("mylabel", strlen("mylabel"), false, &addr, &sec);
     TEST_ASSERT_TRUE(found);
     TEST_ASSERT_EQUAL(sec, g_data);
     TEST_ASSERT_TRUE(addr >= g_data->base && addr < g_data->limit);
@@ -483,14 +495,14 @@ void test_parse_numeric_char_bad_escape(void) {
 }
 
 void test_skip_comment_line(void) {
-    const char* str = "// line comment\n123";
+    const char *str = "// line comment\n123";
     Parser p = init_parser(str);
     TEST_ASSERT_TRUE(skip_comment(&p));
     TEST_ASSERT_EQUAL_CHAR('\n', str[p.pos]);
 }
 
 void test_skip_comment_hash(void) {
-    const char* str = "# preprocessor\n456";
+    const char *str = "# preprocessor\n456";
     Parser p = init_parser("# preprocessor\n456");
     TEST_ASSERT_TRUE(skip_comment(&p));
     TEST_ASSERT_EQUAL_CHAR('\n', str[p.pos]);
@@ -507,7 +519,7 @@ void test_word_list(void) {
     TEST_ASSERT_NULL(g_error);
     TEST_ASSERT_EQUAL_INT(12, g_data->contents.len);
     bool err;
-    TEST_ASSERT_EQUAL_INT(1, LOAD(g_data->base,     4, &err));
+    TEST_ASSERT_EQUAL_INT(1, LOAD(g_data->base, 4, &err));
     TEST_ASSERT_EQUAL_INT(2, LOAD(g_data->base + 4, 4, &err));
     TEST_ASSERT_EQUAL_INT(3, LOAD(g_data->base + 8, 4, &err));
 }
@@ -536,7 +548,8 @@ void test_label_address_increments(void) {
 }
 
 void test_section_switch(void) {
-    assemble_line(".data\nfoo: .word 99\n.text\nadd x0,x0,x0\n.data\nbar: .word 88");
+    assemble_line(
+        ".data\nfoo: .word 99\n.text\nadd x0,x0,x0\n.data\nbar: .word 88");
     TEST_ASSERT_NULL(g_error);
     TEST_ASSERT_EQUAL_INT(8, g_data->contents.len);
     TEST_ASSERT_EQUAL_INT(4, g_text->contents.len);
@@ -568,8 +581,16 @@ void test_unknown_section(void) {
     TEST_ASSERT_EQUAL_STRING(g_error, "Section not found");
 }
 
+void test_la_deferred(void) {
+    bool err;
+    assemble_line("la t0, hi\nhi: nop");
+    TEST_ASSERT_EQUAL_INT(LOAD(g_text->base, 4, &err), 0x00000297);
+    TEST_ASSERT_EQUAL_INT(LOAD(g_text->base + 4, 4, &err), 0x00828293);
+}
+
 void test_linenum(void) {
-    assemble_line("\
+    assemble_line(
+        "\
 addi x0, x0, 1 \n\
 addi x0, x0, 2 \n\
                \n\
@@ -582,7 +603,8 @@ addi x0, x0, 3 \n\
 }
 
 void test_linenum_2(void) {
-    assemble_line("\
+    assemble_line(
+        "\
 .globl _start\n\
 .data\n\
     num1: .word 5\n\
@@ -599,32 +621,33 @@ foo:\n\
     TEST_ASSERT_EQUAL_INT(g_text_by_linenum.len, 7);
 }
 
-
 // -- runtime tests
 
-void build_and_run(const char* txt) {
+void build_and_run(const char *txt) {
     u32 addr;
     assemble(txt, strlen(txt), false);
     TEST_ASSERT_EQUAL_STRING(g_error, NULL);
-    if (resolve_symbol("_start", strlen("_start"), true, &addr, NULL)) g_pc = addr;
+    if (resolve_symbol("_start", strlen("_start"), true, &addr, NULL))
+        g_pc = addr;
     while (!g_exited) {
         emulate();
         if (g_runtime_error_type != ERROR_NONE) break;
     }
 }
-void check_pc_at_label(const char* label) {
+void check_pc_at_label(const char *label) {
     u32 addr;
     TEST_ASSERT_TRUE(resolve_symbol(label, strlen(label), false, &addr, NULL));
     TEST_ASSERT_EQUAL(g_pc, addr);
 }
-void test_runtime_exit() {
+void test_runtime_exit(void) {
     build_and_run("li a7, 93\necall");
     TEST_ASSERT_EQUAL(g_runtime_error_type, ERROR_NONE);
 }
 
 // 16bit instruction, currently unhandled
-void test_runtime_unhandled() {
-    build_and_run("\
+void test_runtime_unhandled(void) {
+    build_and_run(
+        "\
 .globl _start   \n\
 _start:         \n\
 E:  .word 0b01  \n\
@@ -633,8 +656,9 @@ E:  .word 0b01  \n\
     check_pc_at_label("E");
 }
 
-void test_callsan_cantread() {
-    build_and_run("\
+void test_callsan_cantread(void) {
+    build_and_run(
+        "\
 fn:                \n\
     ret            \n\
 .globl _start      \n\
@@ -648,8 +672,9 @@ E:  addi a3, a3, 1 \n\
     check_pc_at_label("E");
 }
 
-void test_callsan_not_saved() {
-    build_and_run("\
+void test_callsan_not_saved(void) {
+    build_and_run(
+        "\
 fn:             \n\
     li s1, 1234 \n\
 E:  ret         \n\
@@ -662,8 +687,9 @@ _start:         \n\
     check_pc_at_label("E");
 }
 
-void test_callsan_ra_mismatch() {
-    build_and_run("\
+void test_callsan_ra_mismatch(void) {
+    build_and_run(
+        "\
 fn2:                 \n\
     ret              \n\
 fn:                  \n\
@@ -677,8 +703,9 @@ _start:              \n\
     check_pc_at_label("E");
 }
 
-void test_callsan_sp_mismatch() {
-    build_and_run("\
+void test_callsan_sp_mismatch(void) {
+    build_and_run(
+        "\
 fn:                  \n\
     addi sp, sp, -16 \n\
     addi sp, sp, 24  \n\
@@ -693,8 +720,9 @@ _start:              \n\
     check_pc_at_label("E");
 }
 
-void test_callsan_ret_empty() {
-    build_and_run("\
+void test_callsan_ret_empty(void) {
+    build_and_run(
+        "\
 fn:                  \n\
     addi sp, sp, -16 \n\
     addi sp, sp, 16  \n\
@@ -709,8 +737,9 @@ E:  ret              \n\
 }
 
 // first set of accesses should be valid, second no
-void test_callsan_load_stack() {
-    build_and_run("\
+void test_callsan_load_stack(void) {
+    build_and_run(
+        "\
 fn:                 \n\
     addi sp, sp, -8 \n\
     sw ra, 0(sp)    \n\
@@ -727,8 +756,9 @@ _start:             \n\
     check_pc_at_label("E");
 }
 
-void test_callsan_stack_poison_fresh() {
-    build_and_run("\
+void test_callsan_stack_poison_fresh(void) {
+    build_and_run(
+        "\
 fn:                 \n\
     addi sp, sp, -4 \n\
 E:  lw t0, 0(sp)    \n\
@@ -742,8 +772,9 @@ _start:             \n\
     check_pc_at_label("E");
 }
 
-void test_callsan_stack_poison_after_ret() {
-    build_and_run("\
+void test_callsan_stack_poison_after_ret(void) {
+    build_and_run(
+        "\
 fn:                 \n\
     addi sp, sp, -4 \n\
     sw ra, 0(sp)    \n\
@@ -759,8 +790,9 @@ E:  lw t1, -4(sp)   \n\
     check_pc_at_label("E");
 }
 
-void test_callsan_stack_poison_second_call() {
-    build_and_run("\
+void test_callsan_stack_poison_second_call(void) {
+    build_and_run(
+        "\
 fn:                 \n\
     addi sp, sp, -4 \n\
     sw ra, 0(sp)    \n\
@@ -781,8 +813,9 @@ _start:             \n\
     check_pc_at_label("E");
 }
 
-void test_callsan_t_clobbered_inside() {
-    build_and_run("\
+void test_callsan_t_clobbered_inside(void) {
+    build_and_run(
+        "\
 fn:                 \n\
     li t0, 99       \n\
     ret             \n\
@@ -797,8 +830,9 @@ E:  addi t0, t0, 1  \n\
     check_pc_at_label("E");
 }
 
-void test_callsan_caller_after_ret() {
-    build_and_run("\
+void test_callsan_caller_after_ret(void) {
+    build_and_run(
+        "\
 fn:                 \n\
     ret             \n\
 .globl _start       \n\
@@ -815,8 +849,9 @@ _start:             \n\
     TEST_ASSERT_EQUAL(g_runtime_error_type, ERROR_NONE);
 }
 
-void test_callsan_arg_clobbered_outside() {
-    build_and_run("\
+void test_callsan_arg_clobbered_outside(void) {
+    build_and_run(
+        "\
 fn:                 \n\
     li a0, 100      \n\
     ret             \n\
@@ -831,8 +866,9 @@ E:  mv t0, a2       \n\
     check_pc_at_label("E");
 }
 
-void test_callsan_two_return_values() {
-    build_and_run("\
+void test_callsan_two_return_values(void) {
+    build_and_run(
+        "\
 fn:                 \n\
     li a0, 42       \n\
     li a1, 7        \n\
@@ -848,7 +884,8 @@ _start:             \n\
 }
 
 void test_registers_and_arithmetic(void) {
-    build_and_run("\
+    build_and_run(
+        "\
 .globl _start\n\
 _start:\n\
     addi a0, x0, 5\n\
@@ -861,7 +898,8 @@ _start:\n\
 }
 
 void test_stack_store_load(void) {
-    build_and_run("\
+    build_and_run(
+        "\
 .globl _start\n\
 _start:\n\
     addi sp, sp, -16\n\
@@ -875,6 +913,44 @@ _start:\n\
     TEST_ASSERT_EQUAL_UINT32(0x1234U, g_regs[REG_A1]);
 }
 
+void test_store_load_misc(void) {
+    build_and_run(
+        "\
+.globl _start\n\
+_start:\n\
+    addi sp, sp, -16\n\
+    li a0, 0x123\n\
+    la a1, dummy\n\
+    sw a0, 0(a1)\n\
+    li a0, 0x1234\n\
+    sw a0, 0(sp)\n\
+    lw a1, 0(sp)\n\
+    addi sp, sp, 16\n\
+    la a2, dummy\n\
+    lw a0, 0(a2)\n\
+    li a7, 93\n\
+    ecall\n\
+.data\n\
+    dummy: .word 0\n\
+");
+    TEST_ASSERT_EQUAL_UINT32(0x1234U, g_regs[REG_A1]);
+    TEST_ASSERT_EQUAL_UINT32(0x123U, g_regs[REG_A0]);
+}
+
+void test_store_incomplete(void) {
+    build_and_run(
+        "\
+.globl _start\n\
+_start:\n\
+    li a0, 0x123\n\
+    la a1, dummy\n\
+    sw a0, 0(a1)\n\
+.data\n\
+    dummy: .byte 0\n\
+");
+    TEST_ASSERT_EQUAL(g_runtime_error_type, ERROR_STORE);
+}
+
 void test_load_store_api(void) {
     assemble_line(".data\nvar: .word 0");
     bool err = false;
@@ -886,7 +962,7 @@ void test_load_store_api(void) {
 }
 
 void test_kernel_memory_protection(void) {
-    const char* prog = ".section .kernel_data\nvar: .word 0xCAFEBABE";
+    const char *prog = ".section .kernel_data\nvar: .word 0xCAFEBABE";
     assemble(prog, strlen(prog), false);
     TEST_ASSERT_EQUAL_STRING(g_error, NULL);
 
@@ -903,13 +979,14 @@ void test_kernel_memory_protection(void) {
     TEST_ASSERT_EQUAL_UINT32(0xCAFEBABEu, val);
 }
 
-void step() {
+void step(void) {
     emulate();
     TEST_ASSERT_EQUAL(ERROR_NONE, g_runtime_error_type);
 }
 
 void test_ecall_stvec(void) {
-    const char *prog = "\
+    const char *prog =
+        "\
 .section .kernel_text\n\
 handler: addi x0, x0, 0\n\
 .section .text\n\
@@ -921,15 +998,16 @@ _start: ecall\n\
     TEST_ASSERT_TRUE(g_kernel_text->contents.len > 0);
     TEST_ASSERT_TRUE(g_text->contents.len > 0);
     g_pc = g_kernel_text->base;
-    
+
     g_csr[CSR_STVEC] = g_kernel_text->base;
 
     u32 addr;
-    TEST_ASSERT_TRUE(resolve_symbol("_start", strlen("_start"), true, &addr, NULL));
+    TEST_ASSERT_TRUE(
+        resolve_symbol("_start", strlen("_start"), true, &addr, NULL));
     g_pc = addr;
 
     emulator_leave_kernel();
-    emulate(); // one single instruction
+    emulate();  // one single instruction
     TEST_ASSERT_EQUAL(g_pc, g_csr[CSR_STVEC]);
     TEST_ASSERT_EQUAL(addr, g_csr[CSR_SEPC]);
 }
@@ -942,7 +1020,8 @@ void test_emulator_interrupt_set_pending(void) {
     g_csr[CSR_MIP] = 0;
     g_csr[CSR_STVEC] = 0xAABB00;
     emulator_interrupt_set_pending(CAUSE_SUPERVISOR_TIMER & ~CAUSE_INTERRUPT);
-    TEST_ASSERT_TRUE(g_csr[CSR_MIP] & (1u << (CAUSE_SUPERVISOR_TIMER & ~CAUSE_INTERRUPT)));
+    TEST_ASSERT_TRUE(g_csr[CSR_MIP] &
+                     (1u << (CAUSE_SUPERVISOR_TIMER & ~CAUSE_INTERRUPT)));
     emulate();
     TEST_ASSERT_EQUAL_UINT32(g_pc, g_csr[CSR_STVEC]);
     TEST_ASSERT_EQUAL_UINT32(g_text->base, g_csr[CSR_SEPC]);
@@ -954,11 +1033,11 @@ void test_sret_returns_to_sepc(void) {
         ".section .kernel_text\n"
         "sret\n"
         "addi x0, x0, 0\n"
-        "return_target: addi x0, x0, 0\n"
-        );
+        "return_target: addi x0, x0, 0\n");
     TEST_ASSERT_EQUAL_STRING(g_error, NULL);
     u32 addr;
-    TEST_ASSERT_TRUE(resolve_symbol("return_target", strlen("return_target"), false, &addr, NULL));
+    TEST_ASSERT_TRUE(resolve_symbol("return_target", strlen("return_target"),
+                                    false, &addr, NULL));
     g_csr[CSR_SEPC] = addr;
     g_pc = g_kernel_text->base;
     emulator_enter_kernel();
@@ -979,9 +1058,9 @@ void test_jump_to_exception_delegation(void) {
     TEST_ASSERT_EQUAL_UINT32(g_csr[CSR_STVEC], g_pc);
 }
 
-
 void test_vectored_interrupt_handler(void) {
-    const char *prog = "\
+    const char *prog =
+        "\
 .section .kernel_text\n\
 vector_handlers:\n\
     addi x0, x0, 0\n\
@@ -999,20 +1078,24 @@ _start: addi x0, x0, 0\n\
     TEST_ASSERT_EQUAL_STRING(g_error, NULL);
 
     u32 vector_handlers;
-    TEST_ASSERT_TRUE(resolve_symbol("vector_handlers", strlen("vector_handlers"), false, &vector_handlers, NULL));
-    
+    TEST_ASSERT_TRUE(resolve_symbol("vector_handlers",
+                                    strlen("vector_handlers"), false,
+                                    &vector_handlers, NULL));
+
     g_csr[CSR_STVEC] = vector_handlers | 1;
-    
+
     emulator_interrupt_set_pending(CAUSE_SUPERVISOR_TIMER & ~CAUSE_INTERRUPT);
     step();
-    
+
     // delivers interrupt and executes one instruction
-    TEST_ASSERT_EQUAL(4 + vector_handlers + 4*(CAUSE_SUPERVISOR_TIMER & ~CAUSE_INTERRUPT), g_pc);
+    TEST_ASSERT_EQUAL(
+        4 + vector_handlers + 4 * (CAUSE_SUPERVISOR_TIMER & ~CAUSE_INTERRUPT),
+        g_pc);
 }
 
-
 void test_sstatus_write_mask(void) {
-    const char *prog = "\
+    const char *prog =
+        "\
 .section .kernel_text\n\
     li t0, -1\n\
     csrrw zero, sstatus, t0\n\
@@ -1027,7 +1110,8 @@ void test_sstatus_write_mask(void) {
 }
 
 void test_sstatus_bit_manipulation(void) {
-    const char *prog = "\
+    const char *prog =
+        "\
 .section .kernel_text\n\
     csrrw t0, sstatus, zero\n\
     ori t0, t0, 256\n\
@@ -1044,7 +1128,8 @@ void test_sstatus_bit_manipulation(void) {
 }
 
 void test_sstatus_ecall(void) {
-    const char *prog = "\
+    const char *prog =
+        "\
 .section .kernel_text\n\
     li t0, 0\n\
     csrrw zero, sstatus, t0\n\

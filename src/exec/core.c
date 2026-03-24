@@ -770,7 +770,6 @@ const char *handle_branch_zero(Parser *p, const char *opcode,
 
 const char *handle_alu_pseudo(Parser *p, const char *opcode,
                               size_t opcode_len) {
-    u32 addr;
     int d, s;
 
     skip_trailing(p);
@@ -1524,8 +1523,8 @@ bool pc_to_label_r(u32 pc, LabelData **ret, u32 *off) {
     return false;
 }
 
-// Ugly because i"m calling it from JS"
-// The problem with this is that... it's basically the cleanest way to do it
+// Ugly because i'm calling it from JS
+// The problem with this is that it's basically the cleanest way to do it
 const char *g_pc_to_label_txt;
 size_t g_pc_to_label_len;
 u32 g_pc_to_label_off;
@@ -1572,7 +1571,7 @@ bool resolve_symbol(const char *sym, size_t sym_len, bool global, u32 *addr,
     return false;
 }
 
-void prepare_aux_sections() {
+void prepare_aux_sections(void) {
     g_stack = malloc(sizeof(Section));
     ARES_CHECK_OOM(g_stack);
     *g_stack = (Section){.name = "ARES_STACK",
@@ -1611,7 +1610,7 @@ void prepare_aux_sections() {
     *ARES_ARRAY_PUSH(&g_sections) = g_mmio;
 }
 
-void prepare_runtime_sections() {
+void prepare_runtime_sections(void) {
     // TODO: dynamically growing stacks?
 
     *ARES_ARRAY_PUSH(&g_sections) = g_text;
@@ -1620,7 +1619,7 @@ void prepare_runtime_sections() {
     *ARES_ARRAY_PUSH(&g_sections) = g_kernel_data;
 }
 
-void free_runtime() {
+void free_runtime(void) {
     for (size_t i = 0; i < ARES_ARRAY_LEN(&g_sections); i++) {
         Section *s = *ARES_ARRAY_GET(&g_sections, i);
         ARES_ARRAY_FREE(&s->relocations);

@@ -63,7 +63,7 @@ void *memset(void *dest, int c, size_t n);
         goto fail_label;                  \
     }
 
-static void *ares_array_grow(void *arr, size_t *cap, size_t size) {
+static inline void *ares_array_grow(void *arr, size_t *cap, size_t size) {
     size_t oldcap = *cap;
     if (oldcap) *cap = oldcap * 2;
     else *cap = 4;

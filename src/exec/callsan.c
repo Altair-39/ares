@@ -7,7 +7,7 @@ export u32 g_reg_bitmap;
 ARES_ARRAY(ShadowStackEnt) g_shadow_stack = ARES_ARRAY_NEW(ShadowStackEnt);
 export u8 g_callsan_stack_written_by[STACK_LEN / 4];
 
-void callsan_init() {
+void callsan_init(void) {
     memset(g_callsan_stack_written_by, 0xFF,
            sizeof(g_callsan_stack_written_by));
     g_reg_bitmap = (1ul << REG_ZERO) | (1ul << REG_SP) | (1ul << REG_TP) |
@@ -48,7 +48,7 @@ const u32 CALLSAN_CALL_CLOBBERED =
     (1u << REG_A3) | (1u << REG_A4) | (1u << REG_A5) | (1u << REG_A6) |
     (1u << REG_A7);
 
-void callsan_call() {
+void callsan_call(void) {
     ShadowStackEnt *e = ARES_ARRAY_PUSH(&g_shadow_stack);
     e->sregs[0] = g_regs[REG_FP];
     e->sregs[1] = g_regs[REG_S1];
@@ -64,7 +64,7 @@ void callsan_call() {
     g_reg_bitmap &= CALLSAN_CALL_ACCESSIBLE;
 }
 
-bool callsan_ret() {
+bool callsan_ret(void) {
     if (ARES_ARRAY_LEN(&g_shadow_stack) == 0) {
         g_runtime_error_type = ERROR_CALLSAN_RET_EMPTY;
         return false;
